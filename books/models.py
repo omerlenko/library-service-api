@@ -17,3 +17,6 @@ class Book(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["author", "title"], name="unique_book")
         ]
+
+    def __str__(self):
+        return f"{self.title} by {self.author}"
