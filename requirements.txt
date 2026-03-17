@@ -1,11 +1,17 @@
 asgiref==3.11.1
+attrs==25.4.0
 black==26.3.1
 click==8.3.1
 colorama==0.4.6
+coverage==7.13.5
 Django==6.0.3
 django-debug-toolbar==6.2.0
 djangorestframework==3.16.1
+drf-spectacular==0.29.0
 flake8==7.3.0
+inflection==0.5.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
 mccabe==0.7.0
 mypy_extensions==1.1.0
 packaging==26.0
@@ -14,5 +20,9 @@ platformdirs==4.9.4
 pycodestyle==2.14.0
 pyflakes==3.4.0
 pytokens==0.4.1
+PyYAML==6.0.3
+referencing==0.37.0
+rpds-py==0.30.0
 sqlparse==0.5.5
 tzdata==2025.3
+uritemplate==4.2.0
