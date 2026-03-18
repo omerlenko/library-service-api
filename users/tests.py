@@ -3,7 +3,6 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.status import HTTP_200_OK
 from rest_framework.test import APIClient
 
 from users.serializers import UserSerializer
@@ -89,7 +88,7 @@ class UserApiTests(TestCase):
         token_url = reverse("users:token_obtain_pair")
         token_res = self.client.post(token_url, payload, format="json")
 
-        self.assertEqual(token_res.status_code, HTTP_200_OK)
+        self.assertEqual(token_res.status_code, status.HTTP_200_OK)
         self.assertIn("access", token_res.data)
 
         access_token = token_res.data["access"]
@@ -97,7 +96,7 @@ class UserApiTests(TestCase):
             reverse("users:manage_user"), HTTP_AUTHORIZE=f"Bearer {access_token}"
         )
 
-        self.assertEqual(res.status_code, HTTP_200_OK)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
 
 
 class AuthenticatedUserApiTests(TestCase):
