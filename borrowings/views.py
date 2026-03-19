@@ -6,6 +6,7 @@ from borrowings.models import Borrowing
 from borrowings.serializers import (
     BorrowingListSerializer,
     BorrowingDetailSerializer,
+    BorrowingCreateSerializer,
 )
 
 
@@ -20,11 +21,18 @@ from borrowings.serializers import (
         description="Return detailed information about a specific borrowing.",
         responses=BorrowingDetailSerializer,
     ),
+    create=extend_schema(
+        summary="Create borrowing",
+        description="Create a new borrowing.",
+        request=BorrowingCreateSerializer,
+        responses=BorrowingCreateSerializer,
+    ),
 )
 class BorrowingViewSet(
     viewsets.GenericViewSet,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
 ):
     queryset = Borrowing.objects.select_related("user", "book")
     serializer_class = BorrowingListSerializer
@@ -35,4 +43,6 @@ class BorrowingViewSet(
             return BorrowingListSerializer
         elif self.action == "retrieve":
             return BorrowingDetailSerializer
+        elif self.action == "create":
+            return BorrowingCreateSerializer
         return BorrowingListSerializer
