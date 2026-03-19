@@ -1,8 +1,48 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
+from books.models import Book
 from books.serializers import BookSerializer, BookListSerializer
 from borrowings.models import Borrowing
+
+
+class BorrowingCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Borrowing
+        fields = (
+            "id",
+            "expected_return_date",
+            "book",
+        )
+
+    def validate_expected_return_date(self, expected_date):
+        if expected_date and expected_date <= timezone.localdate():
+            raise serializers.ValidationError(
+                "Expected return date must be at least one day in the future."
+            )
+
+        return expected_date
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        book = validated_data["book"]
+
+        with transaction.atomic():
+            book = Book.objects.select_for_update().get(pk=book.pk)
+
+            if book.inventory < 1:
+                raise serializers.ValidationError(
+                    {"book": "No more copies of the book left in inventory."}
+                )
+
+            borrowing = Borrowing.objects.create(user=request.user, **validated_data)
+
+            book.inventory -= 1
+            book.save()
+
+        return borrowing
 
 
 class BorrowingUserSerializer(serializers.ModelSerializer):
