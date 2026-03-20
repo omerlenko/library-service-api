@@ -64,6 +64,13 @@ from borrowings.serializers import (
         request=BorrowingCreateSerializer,
         responses=BorrowingCreateSerializer,
     ),
+    return_borrowing=extend_schema(
+        summary="Return borrowing",
+        description="Mark the borrowing as returned, set actual return date "
+        "and increase the book inventory by 1.",
+        request=None,
+        responses={200: BorrowingDetailSerializer},
+    ),
 )
 class BorrowingViewSet(
     viewsets.GenericViewSet,
