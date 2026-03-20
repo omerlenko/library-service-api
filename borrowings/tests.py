@@ -62,6 +62,14 @@ class UnauthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_cant_return_borrowing(self):
+        borrowing = sample_borrowing()
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 class AuthenticatedBorrowingApiTests(TestCase):
 
@@ -242,6 +250,54 @@ class AuthenticatedBorrowingApiTests(TestCase):
         borrowing = Borrowing.objects.get(pk=res.data["id"])
         self.assertEqual(borrowing.user, self.user)
 
+    def test_return_own_borrowing(self):
+        book = sample_book(inventory=1)
+        payload = {
+            "expected_return_date": timezone.localdate() + timedelta(days=1),
+            "book": book.id,
+        }
+
+        res_create = self.client.post(BORROWINGS_URL, payload)
+
+        book.refresh_from_db()
+        self.assertEqual(book.inventory, 0)
+
+        url = reverse(
+            "borrowings:borrowing-return-borrowing", args=[res_create.data["id"]]
+        )
+        res_return = self.client.post(url)
+        borrowing = Borrowing.objects.get(pk=res_create.data["id"])
+
+        borrowing.refresh_from_db()
+        book.refresh_from_db()
+
+        self.assertEqual(res_return.status_code, status.HTTP_200_OK)
+        self.assertEqual(borrowing.actual_return_date, timezone.localdate())
+        self.assertEqual(book.inventory, 1)
+
+    def test_cant_return_own_borrowing_twice(self):
+        borrowing = sample_borrowing(
+            user=self.user, actual_return_date=timezone.localdate()
+        )
+        book = borrowing.book
+        old_inventory = book.inventory
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+
+        book.refresh_from_db()
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(book.inventory, old_inventory)
+
+    def test_user_cant_return_other_users_borrowing(self):
+        other_user = sample_user(email="other_user@user.com")
+        borrowing = sample_borrowing(user=other_user)
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
 
 class StaffBorrowingApiTests(TestCase):
 
@@ -313,3 +369,16 @@ class StaffBorrowingApiTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn(user_2_borrowing.id, returned_ids)
         self.assertNotIn(user_1_borrowing.id, returned_ids)
+
+    def test_admin_can_return_other_users_borrowing(self):
+        other_user = sample_user(email="other@user.com")
+        borrowing = sample_borrowing(user=other_user)
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+        borrowing = Borrowing.objects.get(pk=res.data["id"])
+
+        borrowing.refresh_from_db()
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(borrowing.actual_return_date, timezone.localdate())
