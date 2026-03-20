@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_view, extend_schema, OpenApiParameter
@@ -118,11 +119,9 @@ class BorrowingViewSet(
     )
     def return_borrowing(self, request, *args, **kwargs):
         with transaction.atomic():
-            borrowing = (
-                self.get_queryset()
-                .select_for_update()
-                .select_related("book")
-                .get(pk=kwargs["pk"])
+            borrowing = get_object_or_404(
+                self.get_queryset().select_for_update().select_related("book"),
+                pk=kwargs["pk"],
             )
 
             if borrowing.actual_return_date is not None:
