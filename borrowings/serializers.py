@@ -65,6 +65,7 @@ class BorrowingListSerializer(serializers.ModelSerializer):
             "book",
             "user",
         )
+        read_only_fields = fields
 
 
 class BorrowingDetailSerializer(serializers.ModelSerializer):
@@ -81,3 +82,4 @@ class BorrowingDetailSerializer(serializers.ModelSerializer):
             "book",
             "user",
         )
+        read_only_fields = fields

@@ -1,7 +1,13 @@
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_view, extend_schema, OpenApiParameter
-from rest_framework import viewsets, mixins
+from rest_framework import viewsets, mixins, status
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from borrowings.models import Borrowing
 from borrowings.serializers import (
@@ -59,6 +65,13 @@ from borrowings.serializers import (
         request=BorrowingCreateSerializer,
         responses=BorrowingCreateSerializer,
     ),
+    return_borrowing=extend_schema(
+        summary="Return borrowing",
+        description="Mark the borrowing as returned, set actual return date "
+        "and increase the book inventory by 1.",
+        request=None,
+        responses={200: BorrowingDetailSerializer},
+    ),
 )
 class BorrowingViewSet(
     viewsets.GenericViewSet,
@@ -97,3 +110,33 @@ class BorrowingViewSet(
                 queryset = queryset.filter(actual_return_date__isnull=False)
 
         return queryset
+
+    @action(
+        methods=["POST"],
+        detail=True,
+        permission_classes=(IsAuthenticated,),
+        url_path="return",
+    )
+    def return_borrowing(self, request, *args, **kwargs):
+        with transaction.atomic():
+            borrowing = get_object_or_404(
+                self.get_queryset().select_for_update().select_related("book"),
+                pk=kwargs["pk"],
+            )
+
+            if borrowing.actual_return_date is not None:
+                raise ValidationError(
+                    {"actual_return_date": "This borrowing has already been returned."}
+                )
+
+            borrowing.actual_return_date = timezone.localdate()
+            borrowing.save()
+
+            borrowing.book.inventory += 1
+            borrowing.book.save()
+
+        serializer = BorrowingDetailSerializer(borrowing, context={"request": request})
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
