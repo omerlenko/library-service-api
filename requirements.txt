@@ -1,6 +1,8 @@
 asgiref==3.11.1
 attrs==25.4.0
 black==26.3.1
+certifi==2026.2.25
+charset-normalizer==3.4.6
 click==8.3.1
 colorama==0.4.6
 coverage==7.13.5
@@ -10,6 +12,7 @@ djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.29.0
 flake8==7.3.0
+idna==3.11
 inflection==0.5.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
@@ -21,10 +24,13 @@ platformdirs==4.9.4
 pycodestyle==2.14.0
 pyflakes==3.4.0
 PyJWT==2.12.1
+python-dotenv==1.2.2
 pytokens==0.4.1
 PyYAML==6.0.3
 referencing==0.37.0
+requests==2.32.5
 rpds-py==0.30.0
 sqlparse==0.5.5
 tzdata==2025.3
 uritemplate==4.2.0
+urllib3==2.6.3
