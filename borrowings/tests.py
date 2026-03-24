@@ -9,14 +9,16 @@ from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 
+import borrowings.tasks
 from books.tests import sample_book
 from borrowings.models import Borrowing
 from borrowings.serializers import (
     BorrowingDetailSerializer,
     BorrowingListSerializer,
 )
+from borrowings.tasks import check_overdue_borrowings
 from borrowings.telegram_utils import (
-    build_borrowing_notification_message,
+    build_borrowing_details_message,
     send_telegram_message,
 )
 from users.tests import sample_user
@@ -306,7 +308,7 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
     def test_telegram_notification_message_builder(self):
         borrowing = sample_borrowing(user=self.user)
-        message = build_borrowing_notification_message(borrowing)
+        message = build_borrowing_details_message(borrowing)
 
         self.assertIn(borrowing.book.title, message)
         self.assertIn(borrowing.book.author, message)
@@ -350,7 +352,7 @@ class AuthenticatedBorrowingApiTests(TestCase):
     @override_settings(TELEGRAM_CHAT_ID=None, TELEGRAM_BOT_TOKEN=None)
     def test_message_sender_raises_error_when_env_variables_missing(self):
         borrowing = sample_borrowing(user=self.user)
-        message = build_borrowing_notification_message(borrowing)
+        message = build_borrowing_details_message(borrowing)
 
         with self.assertRaises(RuntimeError):
             send_telegram_message(message)
@@ -474,3 +476,117 @@ class StaffBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(borrowing.actual_return_date, timezone.localdate())
+
+
+class BorrowingCeleryTaskTests(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            email="test_user@user.com",
+            password="test12345",
+            first_name="Test",
+            last_name="User",
+            is_staff=False,
+        )
+
+    @patch("borrowings.tasks.send_telegram_message")
+    def test_overdue_borrowings_trigger_notifications(self, mock_send):
+        today = timezone.localdate()
+        book = sample_book()
+
+        overdue_borrowing_1 = sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+        overdue_borrowing_2 = sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+
+        Borrowing.objects.filter(pk=overdue_borrowing_1.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today - timedelta(days=1),
+        )
+        Borrowing.objects.filter(pk=overdue_borrowing_2.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today - timedelta(days=1),
+        )
+
+        overdue_borrowing_1.refresh_from_db()
+        overdue_borrowing_2.refresh_from_db()
+
+        check_overdue_borrowings()
+        calls = mock_send.call_args_list
+
+        self.assertEqual(len(calls), 3)
+        self.assertIn("Borrowing overdue", calls[0].args[0])
+        self.assertIn("Borrowing overdue", calls[1].args[0])
+        self.assertIn("Total overdue borrowings", calls[2].args[0])
+
+    @patch("borrowings.tasks.send_telegram_message")
+    def test_no_overdue_borrowings_sends_fallback_message(self, mock_send):
+        today = timezone.localdate()
+        book = sample_book()
+
+        sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+        sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+
+        check_overdue_borrowings()
+        args, kwargs = mock_send.call_args
+
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertEqual(args[0], "<b>No borrowings overdue today!</b>")
+
+    @patch("borrowings.tasks.send_telegram_message")
+    def test_returned_borrowings_are_not_overdue(self, mock_send):
+        today = timezone.localdate()
+        book = sample_book()
+
+        overdue_borrowing_1 = sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+
+        Borrowing.objects.filter(pk=overdue_borrowing_1.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today - timedelta(days=1),
+            actual_return_date=today - timedelta(days=1),
+        )
+        overdue_borrowing_1.refresh_from_db()
+
+        check_overdue_borrowings()
+
+        mock_send.assert_called_once()
+        args, kwargs = mock_send.call_args
+
+        self.assertEqual(args[0], "<b>No borrowings overdue today!</b>")
+
+    @patch("borrowings.tasks.send_telegram_message")
+    def test_future_borrowings_are_not_overdue(self, mock_send):
+        today = timezone.localdate()
+        book = sample_book()
+
+        sample_borrowing(
+            user=self.user,
+            book=book,
+            expected_return_date=today + timedelta(days=1),
+        )
+
+        check_overdue_borrowings()
+
+        mock_send.assert_called_once()
+        args, kwargs = mock_send.call_args
+
+        self.assertEqual(args[0], "<b>No borrowings overdue today!</b>")
