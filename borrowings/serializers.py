@@ -7,7 +7,7 @@ from books.models import Book
 from books.serializers import BookSerializer, BookListSerializer
 from borrowings.models import Borrowing
 from borrowings.telegram_utils import (
-    build_borrowing_notification_message,
+    build_borrowing_details_message,
     send_telegram_message,
 )
 
@@ -46,7 +46,10 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
             book.inventory -= 1
             book.save()
 
-            message = build_borrowing_notification_message(borrowing)
+            message = (
+                "<b>New borrowing created:</b>\n"
+                + build_borrowing_details_message(borrowing)
+            )
             transaction.on_commit(lambda: send_telegram_message(message), robust=True)
 
         return borrowing

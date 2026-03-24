@@ -3,9 +3,8 @@ from borrowings.models import Borrowing
 from django.conf import settings
 
 
-def build_borrowing_notification_message(borrowing: Borrowing) -> str:
+def build_borrowing_details_message(borrowing: Borrowing) -> str:
     text = (
-        "<b>New borrowing created:</b>\n"
         f"Book: {borrowing.book.title} by {borrowing.book.author}\n"
         f"User: {borrowing.user.email}\n"
         f"Borrow date: {borrowing.borrow_date}\n"
