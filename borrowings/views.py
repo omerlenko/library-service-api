@@ -58,7 +58,8 @@ from borrowings.serializers import (
     create=extend_schema(
         summary="Create borrowing",
         description=(
-            "Create a new borrowing for the authenticated user. "
+            "Create a new borrowing for the authenticated user "
+            "and send a Telegram notification after successful creation. "
             "The selected book must be in stock, and expected_return_date "
             "must be at least one day in the future."
         ),

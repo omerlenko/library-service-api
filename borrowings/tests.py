@@ -1,9 +1,11 @@
 from datetime import timedelta
+from unittest.mock import patch, Mock
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -12,6 +14,10 @@ from borrowings.models import Borrowing
 from borrowings.serializers import (
     BorrowingDetailSerializer,
     BorrowingListSerializer,
+)
+from borrowings.telegram_utils import (
+    build_borrowing_notification_message,
+    send_telegram_message,
 )
 from users.tests import sample_user
 
@@ -297,6 +303,92 @@ class AuthenticatedBorrowingApiTests(TestCase):
         res = self.client.post(url)
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_telegram_notification_message_builder(self):
+        borrowing = sample_borrowing(user=self.user)
+        message = build_borrowing_notification_message(borrowing)
+
+        self.assertIn(borrowing.book.title, message)
+        self.assertIn(borrowing.book.author, message)
+        self.assertIn(borrowing.user.email, message)
+        self.assertIn(str(borrowing.borrow_date), message)
+        self.assertIn(str(borrowing.expected_return_date), message)
+
+    @override_settings(
+        TELEGRAM_CHAT_ID="123456",
+        TELEGRAM_BOT_TOKEN="test-token",
+    )
+    @patch("borrowings.telegram_utils.requests.post")
+    def test_telegram_notification_message_sender(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"ok": True, "result": {"message_id": 1}}
+        mock_post.return_value = mock_response
+
+        send_telegram_message("Test")
+
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+
+        self.assertEqual(args[0], "https://api.telegram.org/bottest-token/sendMessage")
+        self.assertEqual(kwargs["data"]["chat_id"], "123456")
+        self.assertEqual(kwargs["data"]["text"], "Test")
+        self.assertEqual(kwargs["data"]["parse_mode"], "HTML")
+        self.assertEqual(kwargs["timeout"], 10)
+
+    @override_settings(
+        TELEGRAM_CHAT_ID="123456",
+        TELEGRAM_BOT_TOKEN="test-token",
+    )
+    @patch("borrowings.telegram_utils.requests.post")
+    def test_send_telegram_message_request_error(self, mock_post):
+        mock_post.side_effect = RequestException("Connection failed")
+
+        with self.assertRaises(RuntimeError):
+            send_telegram_message("Test")
+
+    @override_settings(TELEGRAM_CHAT_ID=None, TELEGRAM_BOT_TOKEN=None)
+    def test_message_sender_raises_error_when_env_variables_missing(self):
+        borrowing = sample_borrowing(user=self.user)
+        message = build_borrowing_notification_message(borrowing)
+
+        with self.assertRaises(RuntimeError):
+            send_telegram_message(message)
+
+    @patch("borrowings.serializers.send_telegram_message")
+    def test_create_borrowing_triggers_telegram_notification(self, mock_send):
+        book = sample_book()
+        payload = {
+            "expected_return_date": (timezone.localdate() + timedelta(days=1)),
+            "book": book.id,
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.client.post(BORROWINGS_URL, payload)
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        mock_send.assert_called_once()
+
+        args, kwargs = mock_send.call_args
+        sent_message = args[0]
+
+        self.assertIn("New borrowing created", sent_message)
+        self.assertIn(book.title, sent_message)
+        self.assertIn(self.user.email, sent_message)
+
+    @patch("borrowings.serializers.send_telegram_message")
+    def test_failed_create_does_not_send_notification(self, mock_send):
+        book = sample_book(inventory=0)
+        payload = {
+            "expected_return_date": (timezone.localdate() + timedelta(days=1)),
+            "book": book.id,
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.client.post(BORROWINGS_URL, payload)
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_send.assert_not_called()
 
 
 class StaffBorrowingApiTests(TestCase):
