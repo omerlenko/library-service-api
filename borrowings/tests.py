@@ -9,7 +9,6 @@ from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 
-import borrowings.tasks
 from books.tests import sample_book
 from borrowings.models import Borrowing
 from borrowings.serializers import (
