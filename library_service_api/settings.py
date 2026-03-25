@@ -175,6 +175,5 @@ CELERY_BEAT_SCHEDULE = {
     "check_overdue_borrowings": {
         "task": "borrowings.tasks.check_overdue_borrowings",
         "schedule": crontab(hour=9, minute=0),
-        "relative": True,
     },
 }
