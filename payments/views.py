@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_view, extend_schema
 from rest_framework import viewsets, mixins
 from rest_framework.permissions import IsAuthenticated
 
@@ -5,6 +6,22 @@ from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List payments",
+        description=(
+            "Return a list of payments available to the authenticated user. "
+            "Regular users can see only their own payments. "
+            "Admin users can see all payments."
+        ),
+        responses=PaymentListSerializer(many=True),
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve payment",
+        description="Return detailed information about a specific payment.",
+        responses=PaymentDetailSerializer,
+    ),
+)
 class PaymentViewSet(
     viewsets.GenericViewSet,
     mixins.ListModelMixin,
