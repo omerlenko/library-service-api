@@ -2,7 +2,6 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-
 from books.models import Book
 from books.serializers import BookSerializer, BookListSerializer
 from borrowings.models import Borrowing
@@ -49,7 +48,7 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
             book.inventory -= 1
             book.save()
 
-            create_borrowing_stripe_session(borrowing)
+            create_borrowing_stripe_session(borrowing, request)
 
             message = (
                 "<b>New borrowing created:</b>\n"
