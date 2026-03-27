@@ -65,11 +65,12 @@ from borrowings.serializers import (
             "The selected book must be in stock, and expected_return_date "
             "must be at least one day in the future. "
             "On successful creation, the system decreases the book inventory, "
-            "creates a Stripe Checkout payment session, and stores a pending "
-            "Payment associated with the borrowing."
+            "creates a Stripe Checkout payment session, creates a pending Payment "
+            "associated with the borrowing, and returns the detailed borrowing "
+            "representation including its payments."
         ),
         request=BorrowingCreateSerializer,
-        responses=BorrowingCreateSerializer,
+        responses={201: BorrowingDetailSerializer},
     ),
     return_borrowing=extend_schema(
         summary="Return borrowing",
