@@ -1,6 +1,12 @@
 import stripe.checkout
-from drf_spectacular.utils import extend_schema_view, extend_schema
-from rest_framework import viewsets, mixins, status
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    extend_schema_view,
+    extend_schema,
+    OpenApiParameter,
+    inline_serializer,
+)
+from rest_framework import viewsets, mixins, status, serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
@@ -28,6 +34,49 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
             "including its associated borrowing and Stripe session data."
         ),
         responses=PaymentDetailSerializer,
+    ),
+    success=extend_schema(
+        summary="Confirm successful payment",
+        description=(
+            "Confirm a Stripe Checkout payment using the session_id query parameter. "
+            "If Stripe reports the session as paid, the corresponding local Payment "
+            "is marked as PAID."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="session_id",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Stripe Checkout Session ID returned via success_url.",
+                required=True,
+            ),
+        ],
+        request=None,
+        responses={
+            200: inline_serializer(
+                "PaymentSuccessResponseSerializer",
+                fields={
+                    "detail": serializers.CharField(),
+                    "payment_status": serializers.CharField(),
+                },
+            )
+        },
+    ),
+    cancel=extend_schema(
+        summary="Handle canceled payment",
+        description=(
+            "Return an informational message when the user cancels Stripe Checkout. "
+            "The payment session remains available for up to 24 hours after creation."
+        ),
+        request=None,
+        responses={
+            200: inline_serializer(
+                "PaymentCancelResponseSerializer",
+                fields={
+                    "detail": serializers.CharField(),
+                },
+            )
+        },
     ),
 )
 class PaymentViewSet(
