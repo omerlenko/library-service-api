@@ -18,7 +18,10 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
     ),
     retrieve=extend_schema(
         summary="Retrieve payment",
-        description="Return detailed information about a specific payment.",
+        description=(
+            "Return detailed information about a specific payment, "
+            "including its associated borrowing and Stripe session data."
+        ),
         responses=PaymentDetailSerializer,
     ),
 )

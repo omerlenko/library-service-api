@@ -11,6 +11,9 @@ from borrowings.telegram_utils import (
     send_telegram_message,
 )
 
+from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
+from payments.utils import create_borrowing_stripe_session
+
 
 class BorrowingCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -46,6 +49,8 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
             book.inventory -= 1
             book.save()
 
+            create_borrowing_stripe_session(borrowing)
+
             message = (
                 "<b>New borrowing created:</b>\n"
                 + build_borrowing_details_message(borrowing)
@@ -64,6 +69,7 @@ class BorrowingUserSerializer(serializers.ModelSerializer):
 class BorrowingListSerializer(serializers.ModelSerializer):
     book = BookListSerializer(read_only=True)
     user = serializers.SlugRelatedField(slug_field="email", read_only=True)
+    payments = PaymentListSerializer(read_only=True, many=True)
 
     class Meta:
         model = Borrowing
@@ -74,6 +80,7 @@ class BorrowingListSerializer(serializers.ModelSerializer):
             "actual_return_date",
             "book",
             "user",
+            "payments",
         )
         read_only_fields = fields
 
@@ -81,6 +88,7 @@ class BorrowingListSerializer(serializers.ModelSerializer):
 class BorrowingDetailSerializer(serializers.ModelSerializer):
     book = BookSerializer(read_only=True)
     user = BorrowingUserSerializer(read_only=True)
+    payments = PaymentDetailSerializer(read_only=True, many=True)
 
     class Meta:
         model = Borrowing
@@ -91,5 +99,6 @@ class BorrowingDetailSerializer(serializers.ModelSerializer):
             "actual_return_date",
             "book",
             "user",
+            "payments",
         )
         read_only_fields = fields
