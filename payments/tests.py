@@ -1,7 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch, Mock
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -9,6 +8,7 @@ from django.utils import timezone
 from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
+from stripe import InvalidRequestError
 from books.tests import sample_book
 from borrowings.models import Borrowing
 from borrowings.tests import sample_borrowing
@@ -54,6 +54,89 @@ class UnauthenticatedPaymentsApiTests(TestCase):
         res = self.client.get(url)
 
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_success_endpoint_fails_with_missing_session_id(self):
+        url = reverse("payments:payment-success")
+        res = self.client.get(url)
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("payments.views.stripe.checkout.Session.retrieve")
+    def test_success_endpoint_fails_with_invalid_session_id(self, mock_retrieve):
+        mock_retrieve.side_effect = InvalidRequestError(
+            message="Invalid session id",
+            param="session_id",
+        )
+
+        url = reverse("payments:payment-success")
+        res = self.client.get(url, data={"session_id": "invalid_id"})
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("payments.views.stripe.checkout.Session.retrieve")
+    def test_success_endpoint_marks_payment_with_paid_stripe_session_as_paid(
+        self, mock_session_retrieve
+    ):
+        mock_session = Mock()
+        mock_session.payment_status = "paid"
+        mock_session.id = "cs_test_123"
+        mock_session_retrieve.return_value = mock_session
+
+        payment = sample_payment(
+            status=Payment.Status.PENDING, session_id="cs_test_123"
+        )
+        url = reverse("payments:payment-success")
+        res = self.client.get(url, data={"session_id": "cs_test_123"})
+
+        payment.refresh_from_db()
+        mock_session_retrieve.assert_called_once()
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("Payment confirmed successfully.", res.data["detail"])
+        self.assertEqual(payment.status, Payment.Status.PAID)
+
+    @patch("payments.views.stripe.checkout.Session.retrieve")
+    def test_success_endpoint_keeps_payment_with_unpaid_stripe_session_pending(
+        self, mock_session_retrieve
+    ):
+        mock_session = Mock()
+        mock_session.payment_status = "unpaid"
+        mock_session.id = "cs_test_123"
+        mock_session_retrieve.return_value = mock_session
+
+        payment = sample_payment(
+            status=Payment.Status.PENDING, session_id="cs_test_123"
+        )
+        url = reverse("payments:payment-success")
+        res = self.client.get(url, data={"session_id": "cs_test_123"})
+
+        payment.refresh_from_db()
+        mock_session_retrieve.assert_called_once()
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(payment.status, Payment.Status.PENDING)
+        self.assertIn("This payment hasn't been paid yet.", res.data["detail"])
+
+    @patch("payments.views.stripe.checkout.Session.retrieve")
+    def test_success_endpoint_missing_payment_fails(self, mock_session_retrieve):
+        mock_session = Mock()
+        mock_session.payment_status = "paid"
+        mock_session.id = "cs_test_missing"
+        mock_session_retrieve.return_value = mock_session
+
+        url = reverse("payments:payment-success")
+        res = self.client.get(url, data={"session_id": "cs_test_missing"})
+
+        mock_session_retrieve.assert_called_once()
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cancel_endpoint_returns_expected_message(self):
+        url = reverse("payments:payment-cancel")
+        res = self.client.get(url)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("You can still pay later", res.data["detail"])
 
 
 class AuthenticatedPaymentsApiTests(TestCase):
