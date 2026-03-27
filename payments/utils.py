@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.urls import reverse
 from borrowings.models import Borrowing
 import stripe
 from library_service_api import settings
@@ -7,11 +8,17 @@ from payments.models import Payment
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
-def create_borrowing_stripe_session(borrowing: Borrowing):
+def create_borrowing_stripe_session(borrowing: Borrowing, request):
     book = borrowing.book
     borrowing_duration = borrowing.expected_return_date - borrowing.borrow_date
     total_price = book.daily_fee * Decimal(borrowing_duration.days)
     unit_amount = int(total_price * Decimal("100"))
+
+    success_url = (
+        request.build_absolute_uri(reverse("payments:payment-success"))
+        + "?session_id={CHECKOUT_SESSION_ID}"
+    )
+    cancel_url = request.build_absolute_uri(reverse("payments:payment-cancel"))
 
     session = stripe.checkout.Session.create(
         line_items=[
@@ -27,8 +34,8 @@ def create_borrowing_stripe_session(borrowing: Borrowing):
             }
         ],
         mode="payment",
-        success_url="http://127.0.0.1:8000/api/borrowings/",
-        cancel_url="http://127.0.0.1:8000/api/borrowings/",
+        success_url=success_url,
+        cancel_url=cancel_url,
     )
 
     payment = Payment.objects.create(

@@ -8,7 +8,6 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
 from borrowings.models import Borrowing
 from borrowings.serializers import (
     BorrowingListSerializer,
@@ -66,11 +65,12 @@ from borrowings.serializers import (
             "The selected book must be in stock, and expected_return_date "
             "must be at least one day in the future. "
             "On successful creation, the system decreases the book inventory, "
-            "creates a Stripe Checkout payment session, and stores a pending "
-            "Payment associated with the borrowing."
+            "creates a Stripe Checkout payment session, creates a pending Payment "
+            "associated with the borrowing, and returns the detailed borrowing "
+            "representation including its payments."
         ),
         request=BorrowingCreateSerializer,
-        responses=BorrowingCreateSerializer,
+        responses={201: BorrowingDetailSerializer},
     ),
     return_borrowing=extend_schema(
         summary="Return borrowing",
@@ -117,6 +117,15 @@ class BorrowingViewSet(
                 queryset = queryset.filter(actual_return_date__isnull=False)
 
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        borrowing = serializer.save()
+        instance = self.get_queryset().get(pk=borrowing.pk)
+        out = BorrowingDetailSerializer(instance, context=self.get_serializer_context())
+        headers = self.get_success_headers(out.data)
+        return Response(out.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(
         methods=["POST"],
