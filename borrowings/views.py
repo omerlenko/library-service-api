@@ -23,7 +23,8 @@ from borrowings.serializers import (
         description=(
             "Return a list of borrowings available to the authenticated user. "
             "Regular users can see only their own borrowings. "
-            "Admin users can see all borrowings and may additionally filter by user_id."
+            "Admin users can see all borrowings and may additionally filter by user_id. "
+            "Each borrowing includes its associated payments."
         ),
         parameters=[
             OpenApiParameter(
@@ -52,16 +53,21 @@ from borrowings.serializers import (
     ),
     retrieve=extend_schema(
         summary="Retrieve borrowing",
-        description="Return detailed information about a specific borrowing.",
+        description=(
+            "Return detailed information about a specific borrowing, "
+            "including all payments associated with it."
+        ),
         responses=BorrowingDetailSerializer,
     ),
     create=extend_schema(
         summary="Create borrowing",
         description=(
-            "Create a new borrowing for the authenticated user "
-            "and send a Telegram notification after successful creation. "
+            "Create a new borrowing for the authenticated user. "
             "The selected book must be in stock, and expected_return_date "
-            "must be at least one day in the future."
+            "must be at least one day in the future. "
+            "On successful creation, the system decreases the book inventory, "
+            "creates a Stripe Checkout payment session, and stores a pending "
+            "Payment associated with the borrowing."
         ),
         request=BorrowingCreateSerializer,
         responses=BorrowingCreateSerializer,
