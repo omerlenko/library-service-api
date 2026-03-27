@@ -1,9 +1,16 @@
+from datetime import timedelta
+from decimal import Decimal
+from unittest.mock import patch, Mock
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
+from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 from books.tests import sample_book
+from borrowings.models import Borrowing
 from borrowings.tests import sample_borrowing
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
@@ -116,6 +123,75 @@ class AuthenticatedPaymentsApiTests(TestCase):
         res = self.client.get(url)
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch("payments.utils.stripe.checkout.Session.create")
+    def test_borrowing_creation_creates_payment(self, mock_create_session):
+        mock_session = Mock()
+        mock_session.url = "https://checkout.stripe.com/test-session"
+        mock_session.id = "cs_test_123"
+        mock_create_session.return_value = mock_session
+
+        book = sample_book(daily_fee=1)
+        payload = {
+            "expected_return_date": timezone.localdate() + timedelta(days=1),
+            "book": book.id,
+        }
+
+        res = self.client.post(reverse("borrowings:borrowing-list"), payload)
+
+        mock_create_session.assert_called_once()
+
+        borrowing = Borrowing.objects.get(pk=res.data["id"])
+        payment = Payment.objects.get(borrowing=borrowing)
+
+        self.assertIn(payment, borrowing.payments.all())
+        self.assertEqual(
+            payment.session_url, "https://checkout.stripe.com/test-session"
+        )
+        self.assertEqual(payment.session_id, "cs_test_123")
+        self.assertEqual(payment.money_to_pay, Decimal("1.00"))
+
+    @patch("payments.utils.stripe.checkout.Session.create")
+    def test_if_stripe_fails_borrowing_creation_fails(self, mock_create_session):
+        mock_create_session.side_effect = RequestException("Connection failed")
+
+        book = sample_book(inventory=3, daily_fee=1)
+        payload = {
+            "expected_return_date": timezone.localdate() + timedelta(days=1),
+            "book": book.id,
+        }
+
+        with self.assertRaises(RequestException):
+            self.client.post(reverse("borrowings:borrowing-list"), payload)
+
+        mock_create_session.assert_called_once()
+        book.refresh_from_db()
+
+        self.assertEqual(book.inventory, 3)
+        self.assertFalse(Borrowing.objects.all().exists())
+        self.assertFalse(Payment.objects.all().exists())
+
+    @patch("payments.utils.stripe.checkout.Session.create")
+    def test_stripe_is_called_with_correct_arguments(self, mock_create_session):
+        mock_session = Mock()
+        mock_session.url = "https://checkout.stripe.com/test-session"
+        mock_session.id = "cs_test_123"
+        mock_create_session.return_value = mock_session
+
+        book = sample_book(daily_fee=1)
+        payload = {
+            "expected_return_date": timezone.localdate() + timedelta(days=1),
+            "book": book.id,
+        }
+
+        self.client.post(reverse("borrowings:borrowing-list"), payload)
+
+        args, kwargs = mock_create_session.call_args
+        line_item = kwargs["line_items"][0]
+
+        self.assertEqual(kwargs["mode"], "payment")
+        self.assertEqual(line_item["quantity"], 1)
+        self.assertEqual(line_item["price_data"]["unit_amount"], 100)
 
 
 class StaffPaymentsApiTests(TestCase):
