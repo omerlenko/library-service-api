@@ -9,9 +9,13 @@ from borrowings.telegram_utils import (
     build_borrowing_details_message,
     send_telegram_message,
 )
+from payments.models import Payment
 
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
-from payments.utils import create_borrowing_stripe_session
+from payments.utils import (
+    create_payment_checkout_session,
+    calculate_borrowing_payment_amount,
+)
 
 
 class BorrowingCreateSerializer(serializers.ModelSerializer):
@@ -48,7 +52,10 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
             book.inventory -= 1
             book.save()
 
-            create_borrowing_stripe_session(borrowing, request)
+            amount = calculate_borrowing_payment_amount(borrowing)
+            create_payment_checkout_session(
+                borrowing, amount, Payment.Type.PAYMENT, request
+            )
 
             message = (
                 "<b>New borrowing created:</b>\n"
