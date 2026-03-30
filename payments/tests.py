@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch, Mock
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -14,6 +15,7 @@ from borrowings.models import Borrowing
 from borrowings.tests import sample_borrowing
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
+from payments.utils import calculate_overdue_fine_amount
 from users.tests import sample_user
 
 PAYMENTS_URL = reverse("payments:payment-list")
@@ -275,6 +277,112 @@ class AuthenticatedPaymentsApiTests(TestCase):
         self.assertEqual(kwargs["mode"], "payment")
         self.assertEqual(line_item["quantity"], 1)
         self.assertEqual(line_item["price_data"]["unit_amount"], 100)
+
+    def test_borrowing_returned_on_time_doesnt_create_fine(self):
+        today = timezone.localdate()
+        book = sample_book(inventory=1)
+        borrowing = sample_borrowing(
+            user=self.user, expected_return_date=today + timedelta(days=1), book=book
+        )
+
+        Borrowing.objects.filter(pk=borrowing.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today,
+        )
+
+        borrowing.refresh_from_db()
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(
+            Payment.objects.filter(
+                borrowing=borrowing, payment_type=Payment.Type.FINE
+            ).exists()
+        )
+
+    @patch("payments.utils.stripe.checkout.Session.create")
+    def test_borrowing_returned_late_creates_one_fine(self, mock_create_session):
+        mock_session = Mock()
+        mock_session.url = "https://checkout.stripe.com/test-session"
+        mock_session.id = "cs_test_123"
+        mock_create_session.return_value = mock_session
+
+        today = timezone.localdate()
+        book = sample_book(inventory=1)
+        borrowing = sample_borrowing(
+            user=self.user, expected_return_date=today + timedelta(days=1), book=book
+        )
+
+        Borrowing.objects.filter(pk=borrowing.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today - timedelta(days=1),
+        )
+
+        borrowing.refresh_from_db()
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+        res = self.client.post(url)
+
+        mock_create_session.assert_called_once()
+        payment = Payment.objects.get(borrowing=borrowing)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(Payment.objects.count(), 1)
+        self.assertEqual(payment.payment_type, Payment.Type.FINE)
+        self.assertEqual(payment.session_id, "cs_test_123")
+        self.assertEqual(
+            payment.session_url, "https://checkout.stripe.com/test-session"
+        )
+
+    def test_fine_amount_is_calculated_correctly(self):
+        today = timezone.localdate()
+        book = sample_book(daily_fee=Decimal("1.00"))
+        borrowing = sample_borrowing(
+            user=self.user, expected_return_date=today + timedelta(days=1), book=book
+        )
+
+        Borrowing.objects.filter(pk=borrowing.pk).update(
+            borrow_date=today - timedelta(days=10),
+            expected_return_date=today - timedelta(days=5),
+            actual_return_date=today,
+        )
+
+        borrowing.refresh_from_db()
+        amount = calculate_overdue_fine_amount(borrowing, settings.FINE_MULTIPLIER)
+
+        self.assertEqual(amount, Decimal("10.00"))
+
+    @patch("payments.utils.stripe.checkout.Session.create")
+    def test_if_stripe_fails_borrowing_return_fails(self, mock_create_session):
+        mock_create_session.side_effect = RequestException("Connection failed")
+
+        today = timezone.localdate()
+        book = sample_book(inventory=1)
+        borrowing = sample_borrowing(
+            user=self.user, expected_return_date=today + timedelta(days=1), book=book
+        )
+
+        Borrowing.objects.filter(pk=borrowing.pk).update(
+            borrow_date=today - timedelta(days=3),
+            expected_return_date=today - timedelta(days=1),
+        )
+
+        borrowing.refresh_from_db()
+
+        url = reverse("borrowings:borrowing-return-borrowing", args=[borrowing.id])
+
+        with self.assertRaises(RequestException):
+            self.client.post(url)
+
+        mock_create_session.assert_called_once()
+        book.refresh_from_db()
+        borrowing.refresh_from_db()
+
+        self.assertEqual(book.inventory, 1)
+        self.assertIsNone(borrowing.actual_return_date)
+        self.assertFalse(Payment.objects.exists())
 
 
 class StaffPaymentsApiTests(TestCase):
