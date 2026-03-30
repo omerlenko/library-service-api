@@ -23,7 +23,8 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
         description=(
             "Return a list of payments available to the authenticated user. "
             "Regular users can see only their own payments. "
-            "Admin users can see all payments."
+            "Admin users can see all payments. "
+            "Payments may represent either a regular borrowing payment or an overdue fine."
         ),
         responses=PaymentListSerializer(many=True),
     ),
@@ -31,7 +32,8 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
         summary="Retrieve payment",
         description=(
             "Return detailed information about a specific payment, "
-            "including its associated borrowing and Stripe session data."
+            "including its associated borrowing and Stripe session data. "
+            "A payment may represent either a regular borrowing payment or an overdue fine."
         ),
         responses=PaymentDetailSerializer,
     ),
