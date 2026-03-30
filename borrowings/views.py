@@ -14,6 +14,12 @@ from borrowings.serializers import (
     BorrowingDetailSerializer,
     BorrowingCreateSerializer,
 )
+from library_service_api.settings import FINE_MULTIPLIER
+from payments.models import Payment
+from payments.utils import (
+    calculate_overdue_fine_amount,
+    create_payment_checkout_session,
+)
 
 
 @extend_schema_view(
@@ -54,7 +60,7 @@ from borrowings.serializers import (
         summary="Retrieve borrowing",
         description=(
             "Return detailed information about a specific borrowing, "
-            "including all payments associated with it."
+            "including all associated payments such as regular payments and overdue fines."
         ),
         responses=BorrowingDetailSerializer,
     ),
@@ -74,8 +80,12 @@ from borrowings.serializers import (
     ),
     return_borrowing=extend_schema(
         summary="Return borrowing",
-        description="Mark the borrowing as returned, set actual return date "
-        "and increase the book inventory by 1.",
+        description=(
+            "Mark a borrowing as returned and increase the book inventory by 1. "
+            "If the borrowing is overdue, the system also creates a pending FINE payment "
+            "and a Stripe Checkout session for the overdue amount. "
+            "The response returns the updated borrowing including its associated payments."
+        ),
         request=None,
         responses={200: BorrowingDetailSerializer},
     ),
@@ -150,6 +160,12 @@ class BorrowingViewSet(
 
             borrowing.book.inventory += 1
             borrowing.book.save()
+
+            if borrowing.actual_return_date > borrowing.expected_return_date:
+                amount = calculate_overdue_fine_amount(borrowing, FINE_MULTIPLIER)
+                create_payment_checkout_session(
+                    borrowing, amount, Payment.Type.FINE, request
+                )
 
         serializer = BorrowingDetailSerializer(borrowing, context={"request": request})
         return Response(
