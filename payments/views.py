@@ -12,7 +12,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework_simplejwt.utils import logger
 from stripe import InvalidRequestError
+
+from borrowings.telegram_utils import (
+    build_payment_details_message,
+    send_telegram_message,
+)
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
 
@@ -124,12 +130,30 @@ class PaymentViewSet(
 
         if session.payment_status == "paid":
             payment = get_object_or_404(Payment, session_id=session.id)
-            payment.status = Payment.Status.PAID
-            payment.save()
 
+            if payment.status != Payment.Status.PAID:
+                payment.status = Payment.Status.PAID
+                payment.save()
+
+                message = (
+                    "<b>New payment was made:</b>\n"
+                    + build_payment_details_message(payment)
+                )
+                try:
+                    send_telegram_message(message)
+                except Exception:
+                    logger.exception("Failed to send payment notification")
+
+                return Response(
+                    {
+                        "detail": "Payment confirmed successfully.",
+                        "payment_status": "PAID",
+                    },
+                    status=status.HTTP_200_OK,
+                )
             return Response(
                 {
-                    "detail": "Payment confirmed successfully.",
+                    "detail": "This payment has already been paid.",
                     "payment_status": "PAID",
                 },
                 status=status.HTTP_200_OK,
