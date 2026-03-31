@@ -29,6 +29,8 @@ packaging==26.0
 pathspec==1.0.4
 platformdirs==4.9.4
 prompt_toolkit==3.0.52
+psycopg==3.3.3
+psycopg-binary==3.3.3
 pycodestyle==2.14.0
 pyflakes==3.4.0
 PyJWT==2.12.1
