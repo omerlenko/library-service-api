@@ -1,0 +1,88 @@
+services:
+  web:
+    build:
+      context: .
+    env_file:
+      - .env
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "
+      python manage.py migrate && 
+      python manage.py runserver 0.0.0.0:8000
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: .
+    env_file:
+      - .env
+    restart: always
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "
+      celery -A library_service_api worker -l info
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: .
+    env_file:
+      - .env
+    restart: always
+    volumes:
+      - ./:/app
+      - celerybeat_data:/app/celerybeat
+    command: >
+      sh -c "
+      celery -A library_service_api beat -l info --schedule /app/celerybeat/celerybeat-schedule
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: always
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:16-alpine
+    restart: always
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+  celerybeat_data:
