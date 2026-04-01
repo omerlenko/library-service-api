@@ -189,7 +189,8 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_create_borrowing(self):
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_create_borrowing(self, mock_create_session):
         book = sample_book(inventory=3)
         payload = {
             "expected_return_date": (timezone.localdate() + timedelta(days=1)),
@@ -199,6 +200,7 @@ class AuthenticatedBorrowingApiTests(TestCase):
         res = self.client.post(BORROWINGS_URL, payload)
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        mock_create_session.assert_called_once()
 
         borrowing = Borrowing.objects.get(pk=res.data["id"])
         self.assertEqual(borrowing.user, self.user)
@@ -241,7 +243,8 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_borrowing_assigns_authenticated_user(self):
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_create_borrowing_assigns_authenticated_user(self, mock_create_session):
         other_user = sample_user(email="other@user.com")
         book = sample_book(inventory=3)
         payload = {
@@ -253,11 +256,13 @@ class AuthenticatedBorrowingApiTests(TestCase):
         res = self.client.post(BORROWINGS_URL, payload)
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        mock_create_session.assert_called_once()
 
         borrowing = Borrowing.objects.get(pk=res.data["id"])
         self.assertEqual(borrowing.user, self.user)
 
-    def test_return_own_borrowing(self):
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_return_own_borrowing(self, mock_create_session):
         book = sample_book(inventory=1)
         payload = {
             "expected_return_date": timezone.localdate() + timedelta(days=1),
@@ -268,6 +273,7 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         book.refresh_from_db()
         self.assertEqual(book.inventory, 0)
+        mock_create_session.assert_called_once()
 
         url = reverse(
             "borrowings:borrowing-return-borrowing", args=[res_create.data["id"]]
@@ -356,8 +362,11 @@ class AuthenticatedBorrowingApiTests(TestCase):
         with self.assertRaises(RuntimeError):
             send_telegram_message(message)
 
+    @patch("borrowings.serializers.create_payment_checkout_session")
     @patch("borrowings.serializers.send_telegram_message")
-    def test_create_borrowing_triggers_telegram_notification(self, mock_send):
+    def test_create_borrowing_triggers_telegram_notification(
+        self, mock_send, mock_create_session
+    ):
         book = sample_book()
         payload = {
             "expected_return_date": (timezone.localdate() + timedelta(days=1)),
@@ -369,6 +378,7 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         mock_send.assert_called_once()
+        mock_create_session.assert_called_once()
 
         args, kwargs = mock_send.call_args
         sent_message = args[0]
