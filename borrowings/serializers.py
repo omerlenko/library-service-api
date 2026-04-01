@@ -39,6 +39,17 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         book = validated_data["book"]
 
+        pending_payments = Payment.objects.filter(
+            borrowing__user=request.user, status=Payment.Status.PENDING
+        ).exists()
+        if pending_payments:
+            raise serializers.ValidationError(
+                {
+                    "detail": "You cannot create a new borrowing "
+                    "while you have pending payments."
+                }
+            )
+
         with transaction.atomic():
             book = Book.objects.select_for_update().get(pk=book.pk)
 
