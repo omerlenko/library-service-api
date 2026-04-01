@@ -26,7 +26,7 @@ jobs:
           --health-retries=5
 
     env:
-      SECRET_KEY: test-secret-key
+      DJANGO_SECRET_KEY: test-secret-key
       DEBUG: "0"
 
       POSTGRES_DB: library_service
