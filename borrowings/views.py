@@ -28,7 +28,8 @@ from payments.utils import (
         description=(
             "Return a list of borrowings available to the authenticated user. "
             "Regular users can see only their own borrowings. "
-            "Admin users can see all borrowings and may additionally filter by user_id. "
+            "Admin users can see all borrowings "
+            "and may additionally filter by user_id. "
             "Each borrowing includes its associated payments."
         ),
         parameters=[
@@ -60,7 +61,8 @@ from payments.utils import (
         summary="Retrieve borrowing",
         description=(
             "Return detailed information about a specific borrowing, "
-            "including all associated payments such as regular payments and overdue fines."
+            "including all associated payments such as "
+            "regular payments and overdue fines."
         ),
         responses=BorrowingDetailSerializer,
     ),
@@ -82,9 +84,11 @@ from payments.utils import (
         summary="Return borrowing",
         description=(
             "Mark a borrowing as returned and increase the book inventory by 1. "
-            "If the borrowing is overdue, the system also creates a pending FINE payment "
+            "If the borrowing is overdue, "
+            "the system also creates a pending FINE payment "
             "and a Stripe Checkout session for the overdue amount. "
-            "The response returns the updated borrowing including its associated payments."
+            "The response returns the updated borrowing "
+            "including its associated payments."
         ),
         request=None,
         responses={200: BorrowingDetailSerializer},

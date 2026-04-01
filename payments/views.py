@@ -30,7 +30,8 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
             "Return a list of payments available to the authenticated user. "
             "Regular users can see only their own payments. "
             "Admin users can see all payments. "
-            "Payments may represent either a regular borrowing payment or an overdue fine."
+            "Payments may represent either a regular borrowing payment "
+            "or an overdue fine."
         ),
         responses=PaymentListSerializer(many=True),
     ),
@@ -39,7 +40,8 @@ from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
         description=(
             "Return detailed information about a specific payment, "
             "including its associated borrowing and Stripe session data. "
-            "A payment may represent either a regular borrowing payment or an overdue fine."
+            "A payment may represent either a regular borrowing payment "
+            "or an overdue fine."
         ),
         responses=PaymentDetailSerializer,
     ),
@@ -171,7 +173,8 @@ class PaymentViewSet(
     def cancel(self, request, *args, **kwargs):
         return Response(
             {
-                "detail": "You can still pay later, the payment link will be active for 24 hours after placing the order."
+                "detail": "You can still pay later, "
+                "the payment link will be active for 24 hours after placing the order."
             },
             status=status.HTTP_200_OK,
         )
