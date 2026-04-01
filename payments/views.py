@@ -1,4 +1,5 @@
 import stripe.checkout
+from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     extend_schema_view,
@@ -21,6 +22,7 @@ from borrowings.telegram_utils import (
 )
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
+from payments.utils import create_stripe_checkout_session
 
 
 @extend_schema_view(
@@ -178,3 +180,35 @@ class PaymentViewSet(
             },
             status=status.HTTP_200_OK,
         )
+
+    @action(
+        methods=["POST"],
+        detail=True,
+        permission_classes=(IsAuthenticated,),
+    )
+    def renew(self, request, *args, **kwargs):
+        payment = self.get_object()
+
+        if payment.status == Payment.Status.EXPIRED:
+            new_stripe_session = create_stripe_checkout_session(
+                payment.borrowing, payment.money_to_pay, payment.payment_type, request
+            )
+
+            with transaction.atomic():
+                payment.status = Payment.Status.PENDING
+                payment.session_url = new_stripe_session.url
+                payment.session_id = new_stripe_session.id
+                payment.save()
+
+            serializer = PaymentDetailSerializer(payment)
+            return Response(
+                serializer.data,
+                status=status.HTTP_200_OK,
+            )
+        else:
+            raise ValidationError(
+                {
+                    "status": "This payment is not expired. "
+                    "You can only renew expired payments."
+                }
+            )
