@@ -185,6 +185,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "borrowings.tasks.check_overdue_borrowings",
         "schedule": crontab(hour=10, minute=0),
     },
+    "check_expired_payments": {
+        "task": "payments.tasks.check_expired_payments",
+        "schedule": timedelta(minutes=1),
+    },
 }
 
 FINE_MULTIPLIER = Decimal("2")
