@@ -70,8 +70,8 @@ from payments.utils import (
         summary="Create borrowing",
         description=(
             "Create a new borrowing for the authenticated user. "
-            "The selected book must be in stock, and expected_return_date "
-            "must be at least one day in the future. "
+            "The selected book must be in stock, expected_return_date must be at least "
+            "one day in the future, and the user must not have any pending payments. "
             "On successful creation, the system decreases the book inventory, "
             "creates a Stripe Checkout payment session, creates a pending Payment "
             "associated with the borrowing, and returns the detailed borrowing "

@@ -5,23 +5,10 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from tests.helpers import sample_user
 from users.serializers import UserSerializer
 
 USERS_URL = reverse("users:create_user")
-
-
-def sample_user(**params):
-    defaults = {
-        "email": "test_user@user.com",
-        "password": "test12345",
-        "first_name": "Test",
-        "last_name": "User",
-        "is_staff": False,
-    }
-
-    defaults.update(params)
-
-    return get_user_model().objects.create_user(**defaults)
 
 
 class UserApiTests(TestCase):

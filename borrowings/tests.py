@@ -9,7 +9,6 @@ from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from books.tests import sample_book
 from borrowings.models import Borrowing
 from borrowings.serializers import (
     BorrowingDetailSerializer,
@@ -20,23 +19,10 @@ from borrowings.telegram_utils import (
     build_borrowing_details_message,
     send_telegram_message,
 )
-from users.tests import sample_user
+from payments.models import Payment
+from tests.helpers import sample_borrowing, sample_user, sample_payment, sample_book
 
 BORROWINGS_URL = reverse("borrowings:borrowing-list")
-
-
-def sample_borrowing(**params):
-    defaults = {
-        "expected_return_date": (timezone.localdate() + timedelta(days=1)),
-    }
-    defaults.update(params)
-
-    if "user" not in params:
-        defaults.update(user=sample_user())
-    if "book" not in params:
-        defaults.update(book=sample_book())
-
-    return Borrowing.objects.create(**defaults)
 
 
 class UnauthenticatedBorrowingApiTests(TestCase):
@@ -208,6 +194,66 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         book.refresh_from_db()
         self.assertEqual(book.inventory, 2)
+
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_create_borrowing_fails_if_pending_payments(self, mock_create_session):
+        old_book = sample_book(title="Old Book")
+        old_borrowing = sample_borrowing(user=self.user, book=old_book)
+        sample_payment(borrowing=old_borrowing, status=Payment.Status.PENDING)
+
+        new_book = sample_book(title="New Book", inventory=3)
+        payload = {
+            "expected_return_date": (timezone.localdate() + timedelta(days=1)),
+            "book": new_book.id,
+        }
+
+        res = self.client.post(BORROWINGS_URL, payload)
+
+        new_book.refresh_from_db()
+        mock_create_session.assert_not_called()
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(new_book.inventory, 3)
+
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_create_borrowing_if_no_pending_payments(self, mock_create_session):
+        old_book = sample_book(title="Old Book")
+        old_borrowing = sample_borrowing(user=self.user, book=old_book)
+        sample_payment(borrowing=old_borrowing, status=Payment.Status.PAID)
+
+        new_book = sample_book(title="New Book", inventory=3)
+        payload = {
+            "expected_return_date": (timezone.localdate() + timedelta(days=1)),
+            "book": new_book.id,
+        }
+
+        res = self.client.post(BORROWINGS_URL, payload)
+
+        new_book.refresh_from_db()
+        mock_create_session.assert_called_once()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(new_book.inventory, 2)
+
+    @patch("borrowings.serializers.create_payment_checkout_session")
+    def test_another_users_pending_payment_does_not_block_borrowing_creation(
+        self, mock_create_session
+    ):
+        other_user = sample_user(email="other_user@user.com")
+        other_book = sample_book(title="Old Book")
+        other_borrowing = sample_borrowing(user=other_user, book=other_book)
+        sample_payment(borrowing=other_borrowing, status=Payment.Status.PENDING)
+
+        my_book = sample_book(title="New Book", inventory=3)
+        payload = {
+            "expected_return_date": (timezone.localdate() + timedelta(days=1)),
+            "book": my_book.id,
+        }
+
+        res = self.client.post(BORROWINGS_URL, payload)
+
+        my_book.refresh_from_db()
+        mock_create_session.assert_called_once()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(my_book.inventory, 2)
 
     def test_create_borrowing_fails_if_book_out_of_stock(self):
         book = sample_book(inventory=0)
