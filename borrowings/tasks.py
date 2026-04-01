@@ -26,7 +26,8 @@ def check_overdue_borrowings():
             total_overdue_borrowings += 1
 
         send_telegram_message(
-            f"<b>Total overdue borrowings for today ({today}):</b> {total_overdue_borrowings}."
+            f"<b>Total overdue borrowings for today "
+            f"({today}):</b> {total_overdue_borrowings}."
         )
     else:
         send_telegram_message("<b>No borrowings overdue today!</b>")

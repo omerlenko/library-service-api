@@ -75,9 +75,10 @@ class UnauthenticatedPaymentsApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("payments.views.send_telegram_message")
     @patch("payments.views.stripe.checkout.Session.retrieve")
     def test_success_endpoint_marks_payment_with_paid_stripe_session_as_paid(
-        self, mock_session_retrieve
+        self, mock_session_retrieve, mock_send_message
     ):
         mock_session = Mock()
         mock_session.payment_status = "paid"
@@ -92,6 +93,7 @@ class UnauthenticatedPaymentsApiTests(TestCase):
 
         payment.refresh_from_db()
         mock_session_retrieve.assert_called_once()
+        mock_send_message.assert_called_once()
 
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn("Payment confirmed successfully.", res.data["detail"])
