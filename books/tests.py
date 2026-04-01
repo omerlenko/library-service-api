@@ -3,37 +3,11 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-
 from books.models import Book
 from books.serializers import BookListSerializer, BookSerializer
+from tests.helpers import sample_book, sample_book_payload
 
 BOOKS_URL = reverse("books:book-list")
-
-
-def sample_book(**params):
-    defaults = {
-        "author": "Test Author",
-        "title": "Test Book",
-        "cover": Book.Cover.SOFT,
-        "inventory": 10,
-        "daily_fee": 0.99,
-    }
-
-    defaults.update(params)
-
-    return Book.objects.create(**defaults)
-
-
-def sample_book_payload(**params):
-    payload = {
-        "author": "Test Author",
-        "title": "Test Book",
-        "cover": Book.Cover.SOFT,
-        "inventory": 10,
-        "daily_fee": "0.99",
-    }
-    payload.update(params)
-    return payload
 
 
 class UnauthenticatedBooksApiTests(TestCase):

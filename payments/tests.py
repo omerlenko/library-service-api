@@ -10,31 +10,13 @@ from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 from stripe import InvalidRequestError
-from books.tests import sample_book
 from borrowings.models import Borrowing
-from borrowings.tests import sample_borrowing
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
 from payments.utils import calculate_overdue_fine_amount
-from users.tests import sample_user
+from tests.helpers import sample_payment, sample_borrowing, sample_book, sample_user
 
 PAYMENTS_URL = reverse("payments:payment-list")
-
-
-def sample_payment(**params):
-    defaults = {
-        "status": Payment.Status.PENDING,
-        "payment_type": Payment.Type.PAYMENT,
-        "session_url": "https://example.com/session/1",
-        "session_id": "1",
-        "money_to_pay": 10,
-    }
-    defaults.update(params)
-
-    if "borrowing" not in params:
-        defaults.update(borrowing=sample_borrowing())
-
-    return Payment.objects.create(**defaults)
 
 
 class UnauthenticatedPaymentsApiTests(TestCase):
