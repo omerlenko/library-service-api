@@ -34,6 +34,7 @@ from payments.utils import create_stripe_checkout_session
             "Admin users can see all payments. "
             "Payments may represent either a regular borrowing payment "
             "or an overdue fine."
+            "Payment statuses may be PENDING, PAID, or EXPIRED."
         ),
         responses=PaymentListSerializer(many=True),
     ),
@@ -44,6 +45,7 @@ from payments.utils import create_stripe_checkout_session
             "including its associated borrowing and Stripe session data. "
             "A payment may represent either a regular borrowing payment "
             "or an overdue fine."
+            "A payment may be in PENDING, PAID, or EXPIRED status."
         ),
         responses=PaymentDetailSerializer,
     ),
@@ -89,6 +91,16 @@ from payments.utils import create_stripe_checkout_session
                 },
             )
         },
+    ),
+    renew=extend_schema(
+        summary="Renew expired payment session",
+        description=(
+            "Create a new Stripe Checkout Session for an expired payment. "
+            "The existing payment is updated with the new session_id, session_url, "
+            "and its status is changed back to PENDING."
+        ),
+        request=None,
+        responses={200: PaymentDetailSerializer},
     ),
 )
 class PaymentViewSet(
