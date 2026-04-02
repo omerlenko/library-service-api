@@ -10,8 +10,6 @@ from requests import RequestException
 from rest_framework import status
 from rest_framework.test import APIClient
 from stripe import InvalidRequestError
-
-import payments.views
 from borrowings.models import Borrowing
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
