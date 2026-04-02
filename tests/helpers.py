@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import Mock
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -77,3 +78,15 @@ def sample_user(**params):
     defaults.update(params)
 
     return get_user_model().objects.create_user(**defaults)
+
+
+def set_mock_checkout_session(
+    mock_create_session,
+    session_url="https://checkout.stripe.com/test-session",
+    session_id="cs_test_123",
+):
+    mock_session = Mock()
+    mock_session.url = session_url
+    mock_session.id = session_id
+    mock_create_session.return_value = mock_session
+    return mock_session
