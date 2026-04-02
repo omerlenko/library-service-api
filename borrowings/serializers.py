@@ -13,8 +13,9 @@ from payments.models import Payment
 
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
 from payments.utils import (
-    create_payment_checkout_session,
     calculate_borrowing_payment_amount,
+    create_stripe_checkout_session,
+    create_local_payment,
 )
 
 
@@ -64,8 +65,15 @@ class BorrowingCreateSerializer(serializers.ModelSerializer):
             book.save()
 
             amount = calculate_borrowing_payment_amount(borrowing)
-            create_payment_checkout_session(
+            stripe_session = create_stripe_checkout_session(
                 borrowing, amount, Payment.Type.PAYMENT, request
+            )
+            create_local_payment(
+                borrowing,
+                Payment.Type.PAYMENT,
+                stripe_session.url,
+                stripe_session.id,
+                amount,
             )
 
             message = (

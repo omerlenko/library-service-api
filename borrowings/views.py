@@ -18,7 +18,8 @@ from library_service_api.settings import FINE_MULTIPLIER
 from payments.models import Payment
 from payments.utils import (
     calculate_overdue_fine_amount,
-    create_payment_checkout_session,
+    create_stripe_checkout_session,
+    create_local_payment,
 )
 
 
@@ -167,8 +168,15 @@ class BorrowingViewSet(
 
             if borrowing.actual_return_date > borrowing.expected_return_date:
                 amount = calculate_overdue_fine_amount(borrowing, FINE_MULTIPLIER)
-                create_payment_checkout_session(
+                stripe_session = create_stripe_checkout_session(
                     borrowing, amount, Payment.Type.FINE, request
+                )
+                create_local_payment(
+                    borrowing,
+                    Payment.Type.FINE,
+                    stripe_session.url,
+                    stripe_session.id,
+                    amount,
                 )
 
         serializer = BorrowingDetailSerializer(borrowing, context={"request": request})

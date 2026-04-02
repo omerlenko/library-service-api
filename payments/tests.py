@@ -13,8 +13,15 @@ from stripe import InvalidRequestError
 from borrowings.models import Borrowing
 from payments.models import Payment
 from payments.serializers import PaymentListSerializer, PaymentDetailSerializer
+from payments.tasks import check_expired_payments
 from payments.utils import calculate_overdue_fine_amount
-from tests.helpers import sample_payment, sample_borrowing, sample_book, sample_user
+from tests.helpers import (
+    sample_payment,
+    sample_borrowing,
+    sample_book,
+    sample_user,
+    set_mock_checkout_session,
+)
 
 PAYMENTS_URL = reverse("payments:payment-list")
 
@@ -195,10 +202,7 @@ class AuthenticatedPaymentsApiTests(TestCase):
 
     @patch("payments.utils.stripe.checkout.Session.create")
     def test_borrowing_creation_creates_payment(self, mock_create_session):
-        mock_session = Mock()
-        mock_session.url = "https://checkout.stripe.com/test-session"
-        mock_session.id = "cs_test_123"
-        mock_create_session.return_value = mock_session
+        set_mock_checkout_session(mock_create_session)
 
         book = sample_book(daily_fee=1)
         payload = {
@@ -242,10 +246,7 @@ class AuthenticatedPaymentsApiTests(TestCase):
 
     @patch("payments.utils.stripe.checkout.Session.create")
     def test_stripe_is_called_with_correct_arguments(self, mock_create_session):
-        mock_session = Mock()
-        mock_session.url = "https://checkout.stripe.com/test-session"
-        mock_session.id = "cs_test_123"
-        mock_create_session.return_value = mock_session
+        set_mock_checkout_session(mock_create_session)
 
         book = sample_book(daily_fee=1)
         payload = {
@@ -288,10 +289,7 @@ class AuthenticatedPaymentsApiTests(TestCase):
 
     @patch("payments.utils.stripe.checkout.Session.create")
     def test_borrowing_returned_late_creates_one_fine(self, mock_create_session):
-        mock_session = Mock()
-        mock_session.url = "https://checkout.stripe.com/test-session"
-        mock_session.id = "cs_test_123"
-        mock_create_session.return_value = mock_session
+        set_mock_checkout_session(mock_create_session)
 
         today = timezone.localdate()
         book = sample_book(inventory=1)
@@ -368,6 +366,77 @@ class AuthenticatedPaymentsApiTests(TestCase):
         self.assertIsNone(borrowing.actual_return_date)
         self.assertFalse(Payment.objects.exists())
 
+    @patch("payments.views.create_stripe_checkout_session")
+    def test_renew_expired_payment(self, mock_create_session):
+        set_mock_checkout_session(
+            mock_create_session,
+            session_url="https://checkout.stripe.com/test-session-new",
+            session_id="cs_test_new",
+        )
+
+        borrowing = sample_borrowing(user=self.user)
+        expired_payment = sample_payment(
+            borrowing=borrowing,
+            payment_type=Payment.Type.FINE,
+            session_id="1",
+            status=Payment.Status.EXPIRED,
+            money_to_pay=Decimal("10"),
+        )
+
+        url = reverse("payments:payment-renew", args=[expired_payment.id])
+        res = self.client.post(url)
+
+        mock_create_session.assert_called_once()
+        expired_payment.refresh_from_db()
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(expired_payment.status, Payment.Status.PENDING)
+        self.assertEqual(
+            expired_payment.session_url, "https://checkout.stripe.com/test-session-new"
+        )
+        self.assertEqual(expired_payment.session_id, "cs_test_new")
+        self.assertEqual(expired_payment.payment_type, Payment.Type.FINE)
+        self.assertEqual(expired_payment.money_to_pay, Decimal("10"))
+
+    @patch("payments.views.create_stripe_checkout_session")
+    def test_renew_non_expired_payment_fails(self, mock_create_session):
+        borrowing = sample_borrowing(user=self.user)
+        non_expired_payment = sample_payment(
+            borrowing=borrowing,
+            payment_type=Payment.Type.FINE,
+            session_id="1",
+            status=Payment.Status.PAID,
+        )
+
+        url = reverse("payments:payment-renew", args=[non_expired_payment.id])
+        res = self.client.post(url)
+
+        mock_create_session.assert_not_called()
+        non_expired_payment.refresh_from_db()
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(non_expired_payment.status, Payment.Status.PAID)
+
+    @patch("payments.views.create_stripe_checkout_session")
+    def test_cant_renew_other_users_expired_payment(self, mock_create_session):
+        other_user = sample_user(email="other_user@user.com")
+        other_user_borrowing = sample_borrowing(user=other_user)
+        other_user_expired_payment = sample_payment(
+            borrowing=other_user_borrowing,
+            payment_type=Payment.Type.FINE,
+            session_id="1",
+            status=Payment.Status.EXPIRED,
+        )
+
+        url = reverse("payments:payment-renew", args=[other_user_expired_payment.id])
+        res = self.client.post(url)
+
+        mock_create_session.assert_not_called()
+        other_user_expired_payment.refresh_from_db()
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(other_user_expired_payment.status, Payment.Status.EXPIRED)
+
 
 class StaffPaymentsApiTests(TestCase):
 
@@ -416,3 +485,65 @@ class StaffPaymentsApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data, serializer.data)
+
+
+class PaymentsCeleryTaskTests(TestCase):
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="admin@admin.com",
+            password="test12345",
+            first_name="Admin",
+            last_name="User",
+            is_staff=True,
+        )
+
+    @patch("payments.tasks.stripe.checkout.Session.retrieve")
+    def test_expired_pending_payment_becomes_expired(self, mock_session_retrieve):
+        mock_session = Mock()
+        mock_session.status = "expired"
+        mock_session_retrieve.return_value = mock_session
+
+        payment = sample_payment(status=Payment.Status.PENDING)
+
+        check_expired_payments()
+        mock_session_retrieve.assert_called_once()
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.Status.EXPIRED)
+
+    @patch("payments.tasks.stripe.checkout.Session.retrieve")
+    def test_active_pending_payment_stays_pending(self, mock_session_retrieve):
+        mock_session = Mock()
+        mock_session.status = "open"
+        mock_session_retrieve.return_value = mock_session
+
+        payment = sample_payment(status=Payment.Status.PENDING)
+
+        check_expired_payments()
+        mock_session_retrieve.assert_called_once()
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.Status.PENDING)
+
+    @patch("payments.tasks.stripe.checkout.Session.retrieve")
+    def test_non_pending_payments_are_ignored(self, mock_session_retrieve):
+        borrowing = sample_borrowing(
+            user=self.user,
+        )
+        sample_payment(
+            borrowing=borrowing,
+            payment_type=Payment.Type.PAYMENT,
+            session_id="1",
+            status=Payment.Status.PAID,
+        )
+        sample_payment(
+            borrowing=borrowing,
+            payment_type=Payment.Type.FINE,
+            session_id="2",
+            status=Payment.Status.EXPIRED,
+        )
+
+        check_expired_payments()
+
+        mock_session_retrieve.assert_not_called()

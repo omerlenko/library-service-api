@@ -24,9 +24,9 @@ def calculate_overdue_fine_amount(borrowing: Borrowing, multiplier: Decimal) -> 
     return total_price
 
 
-def create_payment_checkout_session(
+def create_stripe_checkout_session(
     borrowing: Borrowing, amount: Decimal, payment_type: str, request
-) -> Payment:
+):
     book = borrowing.book
     unit_amount = int(amount * Decimal("100"))
 
@@ -57,12 +57,23 @@ def create_payment_checkout_session(
         cancel_url=cancel_url,
     )
 
+    return session
+
+
+def create_local_payment(
+    borrowing: Borrowing,
+    payment_type: str,
+    session_url: str,
+    session_id: str,
+    amount: Decimal,
+) -> Payment:
+
     payment = Payment.objects.create(
         status=Payment.Status.PENDING,
         payment_type=payment_type,
         borrowing=borrowing,
-        session_url=session.url,
-        session_id=session.id,
+        session_url=session_url,
+        session_id=session_id,
         money_to_pay=amount,
     )
 
