@@ -20,7 +20,13 @@ from borrowings.telegram_utils import (
     send_telegram_message,
 )
 from payments.models import Payment
-from tests.helpers import sample_borrowing, sample_user, sample_payment, sample_book
+from tests.helpers import (
+    sample_borrowing,
+    sample_user,
+    sample_payment,
+    sample_book,
+    set_mock_checkout_session,
+)
 
 BORROWINGS_URL = reverse("borrowings:borrowing-list")
 
@@ -175,8 +181,10 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_create_borrowing(self, mock_create_session):
+        set_mock_checkout_session(mock_create_session)
+
         book = sample_book(inventory=3)
         payload = {
             "expected_return_date": (timezone.localdate() + timedelta(days=1)),
@@ -195,8 +203,10 @@ class AuthenticatedBorrowingApiTests(TestCase):
         book.refresh_from_db()
         self.assertEqual(book.inventory, 2)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_create_borrowing_fails_if_pending_payments(self, mock_create_session):
+        set_mock_checkout_session(mock_create_session)
+
         old_book = sample_book(title="Old Book")
         old_borrowing = sample_borrowing(user=self.user, book=old_book)
         sample_payment(borrowing=old_borrowing, status=Payment.Status.PENDING)
@@ -214,8 +224,10 @@ class AuthenticatedBorrowingApiTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(new_book.inventory, 3)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_create_borrowing_if_no_pending_payments(self, mock_create_session):
+        set_mock_checkout_session(mock_create_session)
+
         old_book = sample_book(title="Old Book")
         old_borrowing = sample_borrowing(user=self.user, book=old_book)
         sample_payment(borrowing=old_borrowing, status=Payment.Status.PAID)
@@ -233,10 +245,12 @@ class AuthenticatedBorrowingApiTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(new_book.inventory, 2)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_another_users_pending_payment_does_not_block_borrowing_creation(
         self, mock_create_session
     ):
+        set_mock_checkout_session(mock_create_session)
+
         other_user = sample_user(email="other_user@user.com")
         other_book = sample_book(title="Old Book")
         other_borrowing = sample_borrowing(user=other_user, book=other_book)
@@ -289,8 +303,10 @@ class AuthenticatedBorrowingApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_create_borrowing_assigns_authenticated_user(self, mock_create_session):
+        set_mock_checkout_session(mock_create_session)
+
         other_user = sample_user(email="other@user.com")
         book = sample_book(inventory=3)
         payload = {
@@ -307,8 +323,10 @@ class AuthenticatedBorrowingApiTests(TestCase):
         borrowing = Borrowing.objects.get(pk=res.data["id"])
         self.assertEqual(borrowing.user, self.user)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     def test_return_own_borrowing(self, mock_create_session):
+        set_mock_checkout_session(mock_create_session)
+
         book = sample_book(inventory=1)
         payload = {
             "expected_return_date": timezone.localdate() + timedelta(days=1),
@@ -408,11 +426,13 @@ class AuthenticatedBorrowingApiTests(TestCase):
         with self.assertRaises(RuntimeError):
             send_telegram_message(message)
 
-    @patch("borrowings.serializers.create_payment_checkout_session")
+    @patch("borrowings.serializers.create_stripe_checkout_session")
     @patch("borrowings.serializers.send_telegram_message")
     def test_create_borrowing_triggers_telegram_notification(
         self, mock_send, mock_create_session
     ):
+        set_mock_checkout_session(mock_create_session)
+
         book = sample_book()
         payload = {
             "expected_return_date": (timezone.localdate() + timedelta(days=1)),
@@ -536,7 +556,6 @@ class StaffBorrowingApiTests(TestCase):
 class BorrowingCeleryTaskTests(TestCase):
 
     def setUp(self):
-        self.client = APIClient()
         self.user = get_user_model().objects.create_user(
             email="test_user@user.com",
             password="test12345",
